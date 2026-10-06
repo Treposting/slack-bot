@@ -29,14 +29,63 @@
     return null;
   }
 
+  // The web client's own session for the open workspace: the xoxc token, the
+  // workspace API base (e.g. https://acme.slack.com/) and the signed-in user id.
+  // Slack keeps these in localStorage.localConfig_v2, keyed by team id. The
+  // token is only ever sent back to Slack's own API, never stored or shared.
+  function readSession(doc = document) {
+    try {
+      const win = doc.defaultView;
+      const cfg = JSON.parse(win.localStorage.getItem('localConfig_v2') || 'null');
+      const teams = (cfg && cfg.teams) || {};
+      const teamId =
+        (win.location.pathname.match(/\/client\/([A-Z0-9]+)/) || [])[1] || cfg?.lastActiveTeamId;
+      const team = teams[teamId] || Object.values(teams)[0];
+      if (!team || !team.token) return null;
+      const apiBase = (team.url || 'https://app.slack.com/').replace(/\/?$/, '/');
+      return { token: team.token, apiBase, userId: team.user_id || '', teamId: team.id || teamId };
+    } catch {
+      return null;
+    }
+  }
+
   // Who is signed in. Returns { id, name } best-effort; name may be empty.
   function readSelf(doc = document) {
     const btn = doc.querySelector(SEL.selfButton);
     const label = btn?.getAttribute('aria-label') || btn?.getAttribute('data-qa-username') || '';
     // aria-label is usually "User menu: <name>" or just the name.
     const name = label.replace(/^[^:]*:\s*/, '').trim();
-    const id = btn?.getAttribute('data-member-id') || doc.body?.getAttribute('data-member-id') || '';
+    const id =
+      btn?.getAttribute('data-member-id') ||
+      doc.body?.getAttribute('data-member-id') ||
+      readSession(doc)?.userId ||
+      '';
     return { id, name };
+  }
+
+  // The channel id and ts chat.delete needs. The timestamp link's href is
+  // ".../archives/<channel>/p<ts without the dot>", which works for channels,
+  // DMs and threads alike; the URL's channel and the row id are fallbacks.
+  function messageRef(el, doc = document) {
+    let channel = '';
+    let ts = '';
+    for (const a of el.querySelectorAll('a[href*="/archives/"]')) {
+      const m = a.getAttribute('href').match(/\/archives\/([A-Z0-9]+)\/p(\d{10})(\d{6})/);
+      if (m) {
+        channel = m[1];
+        ts = `${m[2]}.${m[3]}`;
+        break;
+      }
+    }
+    if (!ts) {
+      const raw = el.querySelector(SEL.ts)?.getAttribute('data-ts') || messageId(el);
+      ts = (raw.match(/\d{10}\.\d{6}/) || [''])[0];
+    }
+    if (!channel) {
+      const path = doc.defaultView?.location?.pathname || '';
+      channel = (path.match(/\/client\/[A-Z0-9]+\/([A-Z0-9]+)/) || [])[1] || '';
+    }
+    return channel && ts ? { channel, ts } : null;
   }
 
   // Pull the stable message id (the channel/ts pair Slack puts on the node).
@@ -152,6 +201,53 @@
     return gone ? { ok: true } : { ok: false, error: 'still_present' };
   }
 
+  // Delete one message the way Slack's own client does: POST chat.delete with
+  // the session token (the request you see in DevTools when you delete by
+  // hand). Success is Slack's { ok: true }, not a DOM guess. Rate limits are
+  // waited out and retried.
+  async function deleteViaApi(node, doc = document, { fetchImpl, session, retries = 3 } = {}) {
+    session = session || readSession(doc);
+    if (!session) return { ok: false, error: 'no_session' };
+    const ref = messageRef(node, doc);
+    if (!ref) return { ok: false, error: 'no_message_ref' };
+    const doFetch = fetchImpl || doc.defaultView.fetch.bind(doc.defaultView);
+
+    for (let attempt = 0; ; attempt++) {
+      const body = new (doc.defaultView.FormData || FormData)();
+      body.append('token', session.token);
+      body.append('channel', ref.channel);
+      body.append('ts', ref.ts);
+      let res;
+      let data;
+      try {
+        res = await doFetch(`${session.apiBase}api/chat.delete`, {
+          method: 'POST',
+          body,
+          credentials: 'include',
+        });
+        data = await res.json();
+      } catch (e) {
+        return { ok: false, error: `network: ${(e && e.message) || e}` };
+      }
+      if (data && data.ok) return { ok: true };
+      const error = (data && data.error) || `http_${res.status}`;
+      if (error === 'message_not_found') return { ok: true, note: 'already gone' };
+      if ((error === 'ratelimited' || res.status === 429) && attempt < retries) {
+        const wait = Number(res.headers?.get?.('Retry-After')) || 2;
+        await sleep(wait * 1000);
+        continue;
+      }
+      return { ok: false, error };
+    }
+  }
+
+  // Prefer the API (reliable); fall back to clicking through the menu only if
+  // the session can't be read.
+  async function deleteMessage(node, doc = document, opts = {}) {
+    if (readSession(doc)) return deleteViaApi(node, doc, opts);
+    return deleteViaMenu(node, doc);
+  }
+
   function getScroller(doc = document) {
     return doc.querySelector(SEL.scroller) || null;
   }
@@ -170,7 +266,7 @@
     const {
       onProgress = () => {},
       shouldStop = () => false,
-      deleteOne = (node) => deleteViaMenu(node, doc),
+      deleteOne = (node) => deleteMessage(node, doc),
       gap = 1200,
       scrollPause = 700,
       maxRounds = 600,
@@ -182,6 +278,9 @@
     let failed = 0;
     let idle = 0;
     const problems = [];
+    // An API delete returns before Slack's client removes the row, so remember
+    // what's been handled to avoid counting it twice on the next scan.
+    const handled = new Set();
 
     if (scroller) {
       scroller.scrollTop = scroller.scrollHeight; // begin at the newest message
@@ -192,10 +291,11 @@
       if (shouldStop()) break;
 
       const { messages } = scanMessages(doc);
-      const mine = messages.filter((m) => m.isMine && m.node && doc.contains(m.node));
+      const mine = messages.filter((m) => m.isMine && m.node && doc.contains(m.node) && !handled.has(m.id));
       let deletedThisRound = 0;
       for (const m of mine) {
         if (shouldStop()) break;
+        handled.add(m.id);
         let res;
         try {
           res = await deleteOne(m.node);
@@ -234,7 +334,7 @@
     return { total, failed, problems, reachedTop: scroller ? scroller.scrollTop <= 0 : true };
   }
 
-  const api = { SEL, readSelf, parseMessage, scanMessages, deleteViaMenu, messageId, getScroller, firstMessageId, autoClear, sleep };
+  const api = { SEL, readSession, readSelf, messageRef, deleteViaApi, deleteMessage, parseMessage, scanMessages, deleteViaMenu, messageId, getScroller, firstMessageId, autoClear, sleep };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (root) root.SlackCleanerUI = api;
 })(typeof window !== 'undefined' ? window : null);

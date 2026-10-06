@@ -96,3 +96,65 @@ test('deleteViaMenu reports when the actions menu is missing', async () => {
   assert.strictEqual(res.ok, false);
   assert.strictEqual(res.error, 'no_actions_menu');
 });
+
+// A page whose localStorage holds the web client's session, the way Slack's
+// own client keeps it, and whose message row carries the archive link.
+function buildSessionDom() {
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <div data-qa="message_container" data-item-key="1791298979.714889">
+      <a data-qa="message_sender_name" data-message-sender="U_ME">Me</a>
+      <a class="c-timestamp" data-ts="1791298979.714889"
+         href="https://acme.slack.com/archives/D09Q8BVA9N0/p1791298979714889"></a>
+      <div data-qa="message-text">bye</div>
+    </div>
+  </body></html>`, { url: 'https://app.slack.com/client/T07446WQEJD/D09Q8BVA9N0' });
+  dom.window.localStorage.setItem('localConfig_v2', JSON.stringify({
+    teams: { T07446WQEJD: { id: 'T07446WQEJD', token: 'xoxc-test', url: 'https://acme.slack.com/', user_id: 'U_ME' } },
+  }));
+  return dom;
+}
+
+function fakeFetch(responses) {
+  const calls = [];
+  const fn = async (url, init) => {
+    calls.push({ url, fields: Object.fromEntries(init.body.entries()), credentials: init.credentials });
+    const r = responses.shift();
+    return { status: r.status || 200, headers: { get: () => r.retryAfter }, json: async () => r.body };
+  };
+  fn.calls = calls;
+  return fn;
+}
+
+test('readSession and messageRef find what chat.delete needs', () => {
+  const { window } = buildSessionDom();
+  const UI = loadUI();
+  const s = UI.readSession(window.document);
+  assert.deepStrictEqual(s, { token: 'xoxc-test', apiBase: 'https://acme.slack.com/', userId: 'U_ME', teamId: 'T07446WQEJD' });
+  const node = window.document.querySelector('[data-qa="message_container"]');
+  assert.deepStrictEqual(UI.messageRef(node, window.document), { channel: 'D09Q8BVA9N0', ts: '1791298979.714889' });
+});
+
+test('deleteViaApi posts chat.delete like the Slack client', async () => {
+  const { window } = buildSessionDom();
+  const UI = loadUI();
+  const node = window.document.querySelector('[data-qa="message_container"]');
+  const fetchImpl = fakeFetch([{ body: { ok: true, channel: 'D09Q8BVA9N0', ts: '1791298979.714889' } }]);
+  const res = await UI.deleteViaApi(node, window.document, { fetchImpl });
+  assert.deepStrictEqual(res, { ok: true });
+  assert.strictEqual(fetchImpl.calls[0].url, 'https://acme.slack.com/api/chat.delete');
+  assert.strictEqual(fetchImpl.calls[0].credentials, 'include');
+  assert.deepStrictEqual(fetchImpl.calls[0].fields, { token: 'xoxc-test', channel: 'D09Q8BVA9N0', ts: '1791298979.714889' });
+});
+
+test('deleteViaApi retries on ratelimited and surfaces Slack errors', async () => {
+  const { window } = buildSessionDom();
+  const UI = loadUI();
+  const node = window.document.querySelector('[data-qa="message_container"]');
+  const fetchImpl = fakeFetch([
+    { status: 429, retryAfter: '0.01', body: { ok: false, error: 'ratelimited' } },
+    { body: { ok: false, error: 'cant_delete_message' } },
+  ]);
+  const res = await UI.deleteViaApi(node, window.document, { fetchImpl });
+  assert.deepStrictEqual(res, { ok: false, error: 'cant_delete_message' });
+  assert.strictEqual(fetchImpl.calls.length, 2);
+});

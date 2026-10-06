@@ -143,7 +143,7 @@
       foot.textContent = `Deleting ${done + 1} of ${chosen.length}…`;
       let res;
       try {
-        res = await UI.deleteViaMenu(m.node, document);
+        res = await UI.deleteMessage(m.node, document);
       } catch (e) {
         res = { ok: false, error: String(e && e.message || e) };
       }

@@ -2,11 +2,11 @@
 
 A Chrome extension for deleting **your own** Slack messages, using the Slack account you're already signed in to in the browser. No new Slack app, no token to copy, nothing for a workspace admin to approve.
 
-Open any conversation, thread or DM in Slack, click the extension button, pick the messages you want gone, and it deletes them the same way you would by hand, through Slack's own "Delete message" action, after you confirm.
+Open any conversation, thread or DM in Slack, click the extension button, pick the messages you want gone, and it deletes them the same way Slack's own client does when you delete by hand (a `chat.delete` call), after you confirm.
 
 ## How it works (and why it's safe)
 
-The extension runs only on `app.slack.com`, inside the tab you've already signed in to. For each message you select it clicks Slack's own message menu → **Delete message…** → confirms. It does **not** read, copy or store your Slack token, password or session, so there's nothing that looks like a rogue app to your workspace.
+The extension runs only on `app.slack.com`, inside the tab you've already signed in to. For each message you select it sends the same `chat.delete` request Slack's web client sends when you delete a message yourself, using the session that tab already has (read from Slack's own `localStorage`). The token is only ever sent back to your workspace's Slack API; it is never stored, logged or sent anywhere else. If the session can't be read, it falls back to clicking Slack's message menu → **Delete message…** → confirm.
 
 - Only messages Slack shows as yours are listed, and only in the conversation you have open.
 - Nothing is deleted until you select messages and confirm a warning dialog.
@@ -42,7 +42,7 @@ The extension isn't on the Chrome Web Store; load it unpacked:
 
 - Only acts on messages Slack has rendered (what you've scrolled through), not your entire history at once.
 - Slack's web layout changes occasionally; if scanning or deleting stops working, the selectors are all grouped at the top of [`extension/slack-ui.js`](extension/slack-ui.js) for a quick fix.
-- Some workspaces disable message deletion for members; those will report `no_delete_option`.
+- Some workspaces disable message deletion for members; those will report `cant_delete_message` (or `no_delete_option` in menu mode).
 
 ## Development
 
