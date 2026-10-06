@@ -59,6 +59,10 @@ npm test            # node:test runs the .ts tests directly
 npm run package     # build + dist/slack-cleaner-v<version>.zip for a release
 ```
 
+### Releasing
+
+Every push to `main` (including merged PRs) runs [`.github/workflows/release.yml`](.github/workflows/release.yml): typecheck, tests, build, then it publishes a GitHub release with the zip **if** the version in `extension/manifest.json` doesn't have a release yet. So to ship, bump `"version"` in the manifest and push; pushes without a version bump just run the checks.
+
 Tests cover the selection logic and the Slack DOM reading / delete / auto-clear flow against a simulated Slack page (jsdom), so they never touch a real workspace.
 
 ### Layout

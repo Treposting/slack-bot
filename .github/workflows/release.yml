@@ -1,0 +1,65 @@
+# On every push to main (including merged PRs): typecheck, test, build, and
+# publish a GitHub release for the version in extension/manifest.json — unless
+# a release for that version already exists. Bump the version to ship.
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run package
+
+      - name: Read version
+        id: version
+        run: echo "version=$(node -p "require('./extension/manifest.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Publish release if this version is new
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          TAG="v$VERSION"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::notice::Release $TAG already exists — bump the version in extension/manifest.json to publish a new one."
+            exit 0
+          fi
+          cat > notes.md <<EOF
+          Delete your own Slack messages from any channel, DM or thread.
+
+          ## Install
+          1. Download **slack-cleaner-$TAG.zip** below and unzip it.
+          2. Open \`chrome://extensions\` and turn on **Developer mode**.
+          3. Click **Load unpacked** and select the \`slack-cleaner\` folder.
+
+          Open Slack at **app.slack.com** (not the desktop app) and click the Slack Cleaner icon.
+
+          To update from an older version, replace the folder and click ↻ on the extension.
+          EOF
+          gh release create "$TAG" "dist/slack-cleaner-$TAG.zip" \
+            --title "Slack Cleaner $VERSION" \
+            --notes-file notes.md \
+            --generate-notes \
+            --target "$GITHUB_SHA" \
+            --latest
