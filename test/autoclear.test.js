@@ -6,7 +6,7 @@ const { JSDOM } = require('jsdom');
 // messages is in the DOM, scrolling up loads older ones (prepended at the top,
 // since Slack shows oldest at top / newest at bottom), and deleting a message
 // removes just that node. This lets autoClear be exercised end to end.
-function buildVirtualDom(messages, { windowSize = 3 } = {}) {
+function buildVirtualDom(messages, { windowSize = 3, loadDelay = 0 } = {}) {
   const dom = new JSDOM(
     `<!doctype html><html><body>
       <button data-qa="user-button" aria-label="User menu: Me" data-member-id="U_ME"></button>
@@ -19,6 +19,7 @@ function buildVirtualDom(messages, { windowSize = 3 } = {}) {
   const scroller = document.getElementById('scroller');
   let oldestLoaded = Math.max(0, M.length - windowSize);
   let top = 0;
+  let pending = false;
 
   Object.defineProperty(scroller, 'clientHeight', { value: 100, configurable: true });
   Object.defineProperty(scroller, 'scrollHeight', {
@@ -31,7 +32,18 @@ function buildVirtualDom(messages, { windowSize = 3 } = {}) {
       let clamped = Math.max(0, Math.min(v, scroller.scrollHeight));
       // Reaching the top loads an older message; the prepended content grows
       // above the viewport, so the scroll position is pushed back down off 0.
-      if (clamped <= 0 && oldestLoaded > 0) {
+      // With loadDelay, history arrives later, like a real network fetch.
+      if (clamped <= 0 && oldestLoaded > 0 && loadDelay) {
+        if (!pending) {
+          pending = true;
+          setTimeout(() => {
+            pending = false;
+            oldestLoaded -= 1;
+            scroller.insertBefore(nodeFor(M[oldestLoaded]), scroller.firstChild);
+            top = 40;
+          }, loadDelay);
+        }
+      } else if (clamped <= 0 && oldestLoaded > 0) {
         oldestLoaded -= 1;
         scroller.insertBefore(nodeFor(M[oldestLoaded]), scroller.firstChild);
         clamped = 40;
@@ -104,7 +116,7 @@ test('autoClear walks to the top and deletes only my messages', async () => {
   global.MouseEvent = dom.window.MouseEvent;
   const UI = loadUI();
 
-  const res = await UI.autoClear(dom.window.document, { gap: 0, scrollPause: 0 });
+  const res = await UI.autoClear(dom.window.document, { gap: 0, scrollPause: 0, loadTimeout: 30 });
 
   assert.strictEqual(res.failed, 0);
   assert.strictEqual(res.total, 5); // the five U_ME messages
@@ -123,10 +135,30 @@ test('autoClear stops promptly when asked', async () => {
   const res = await UI.autoClear(dom.window.document, {
     gap: 0,
     scrollPause: 0,
+    loadTimeout: 30,
     shouldStop: () => ++calls > 2, // stop after the first couple of deletes
   });
   assert.ok(res.total < 10, `expected to stop early, deleted ${res.total}`);
   assert.ok(dom.window.document.querySelectorAll('[data-qa="message_container"]').length > 0);
+});
+
+test('autoClear waits for slow history loads at the top instead of stopping', async () => {
+  const msgs = [
+    mk(3000, true, 'oldest mine'),
+    mk(3001, false, 'theirs'),
+    mk(3002, true, 'mine'),
+    mk(3003, true, 'newest mine'),
+  ];
+  const dom = buildVirtualDom(msgs, { windowSize: 1, loadDelay: 120 });
+  global.MouseEvent = dom.window.MouseEvent;
+  const UI = loadUI();
+
+  const res = await UI.autoClear(dom.window.document, { gap: 0, scrollPause: 10, loadTimeout: 900 });
+
+  assert.strictEqual(res.total, 3);
+  assert.strictEqual(res.failed, 0);
+  const left = [...dom.window.document.querySelectorAll('[data-qa="message_container"]')];
+  assert.deepStrictEqual(left.map((n) => n.getAttribute('data-item-key')), ['3001.000']);
 });
 
 test('getScroller and firstMessageId read the list', () => {

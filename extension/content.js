@@ -271,8 +271,10 @@
       onProgress: ({ total, failed, phase }) => {
         const n = total - failed;
         status(
-          phase === 'scrolling'
-            ? `Loading older messages… <b>${n}</b> deleted so far`
+          phase === 'loading'
+            ? `Waiting for Slack to load older messages… <b>${n}</b> deleted so far`
+            : phase === 'scrolling'
+            ? `Scrolling up… <b>${n}</b> deleted so far`
             : `Deleting… <b>${n}</b> removed${failed ? `, ${failed} failed` : ''}`
         );
       },

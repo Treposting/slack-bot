@@ -254,13 +254,28 @@
     return deleteViaMenu(node, doc);
   }
 
+  // The message list's scroll container. Several elements can match; prefer
+  // one that actually scrolls.
   function getScroller(doc = document) {
-    return doc.querySelector(SEL.scroller) || null;
+    const all = [...doc.querySelectorAll(SEL.scroller)].filter((n) => !n.closest('#slack-cleaner'));
+    return all.find((n) => n.scrollHeight > n.clientHeight + 1) || all[0] || null;
   }
 
   function firstMessageId(doc = document) {
     const el = doc.querySelector(SEL.message);
     return el ? messageId(el) : null;
+  }
+
+  // Jiggle the list at the top so Slack's "load older" trigger fires again:
+  // step down a little, then back up, with a wheel event like a real scroll.
+  async function nudgeTop(scroller, doc) {
+    const win = doc.defaultView;
+    scroller.scrollTop = Math.min(120, scroller.scrollHeight);
+    await sleep(120);
+    scroller.scrollTop = 0;
+    if (win && win.WheelEvent) {
+      scroller.dispatchEvent(new win.WheelEvent('wheel', { deltaY: -400, bubbles: true }));
+    }
   }
 
   // Clear the signed-in user's messages across a whole conversation: start at
@@ -277,9 +292,11 @@
       scrollPause = 700,
       maxRounds = 600,
       maxIdle = 3, // rounds with no deletes and no new messages before stopping
+      loadTimeout = 6000, // how long to wait for Slack to fetch older history at the top
+      topRetries = 2, // extra nudges at the top before deciding it's really the start
     } = opts;
 
-    const scroller = getScroller(doc);
+    let scroller = getScroller(doc);
     let total = 0;
     let failed = 0;
     let idle = 0;
@@ -318,26 +335,43 @@
         await sleep(gap);
       }
 
-      if (shouldStop() || !scroller) break;
+      if (shouldStop()) break;
+      // Slack can swap the list element (e.g. after a re-render); re-find it.
+      if (!scroller || !doc.contains(scroller)) scroller = getScroller(doc);
+      if (!scroller) break;
 
       // Load older messages by scrolling up.
       const prevTop = scroller.scrollTop;
       const prevFirst = firstMessageId(doc);
       const step = Math.max(300, Math.floor(scroller.clientHeight * 0.8));
       scroller.scrollTop = Math.max(0, scroller.scrollTop - step);
+      onProgress({ total, failed, phase: 'scrolling' });
       await sleep(scrollPause);
 
       const scrolled = scroller.scrollTop < prevTop - 1;
-      const loadedNew = firstMessageId(doc) !== prevFirst;
+      let loadedNew = firstMessageId(doc) !== prevFirst;
+
+      // At the top, Slack fetches older history over the network and shows a
+      // spinner first, so a short pause isn't enough. Wait for new rows, and
+      // nudge the scroll a couple of times, before deciding it's the start.
+      if (!loadedNew && scroller.scrollTop <= 1) {
+        onProgress({ total, failed, phase: 'loading' });
+        const height = scroller.scrollHeight;
+        const changed = () => firstMessageId(doc) !== prevFirst || scroller.scrollHeight !== height;
+        for (let i = 0; i <= topRetries && !loadedNew && !shouldStop(); i++) {
+          if (i > 0) await nudgeTop(scroller, doc);
+          loadedNew = Boolean(await waitFor(changed, { timeout: loadTimeout / (topRetries + 1), interval: 150 }));
+        }
+      }
+
       const progressed = deletedThisRound > 0 || scrolled || loadedNew;
       idle = progressed ? 0 : idle + 1;
-      onProgress({ total, failed, phase: 'scrolling' });
 
-      if (scroller.scrollTop <= 0 && !loadedNew && deletedThisRound === 0) break; // at the top, nothing left
+      if (scroller.scrollTop <= 1 && !loadedNew && deletedThisRound === 0) break; // at the top, nothing left
       if (idle >= maxIdle) break; // stuck (can't scroll, nothing deleting)
     }
 
-    return { total, failed, problems, reachedTop: scroller ? scroller.scrollTop <= 0 : true };
+    return { total, failed, problems, reachedTop: scroller ? scroller.scrollTop <= 1 : true };
   }
 
   const api = { SEL, readSession, readSelf, messageRef, deleteViaApi, deleteMessage, parseMessage, scanMessages, deleteViaMenu, messageId, getScroller, firstMessageId, autoClear, sleep };
