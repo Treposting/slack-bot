@@ -18,7 +18,7 @@ The extension runs only on `app.slack.com`, inside the tab you've already signed
 
 The extension isn't on the Chrome Web Store; load it unpacked:
 
-1. Download the latest `slack-cleaner-vX.Y.Z.zip` from [Releases](https://github.com/Treposting/slack-bot/releases/latest) and unzip it (or clone this repo and use the `extension/` folder).
+1. Download the latest `slack-cleaner-vX.Y.Z.zip` from [Releases](https://github.com/Treposting/slack-bot/releases/latest) and unzip it. (Working from a clone instead? Run `npm install && npm run build` first, then use the `extension/` folder.)
 2. Open `chrome://extensions` in Chrome (or any Chromium browser).
 3. Turn on **Developer mode** (top right).
 4. Click **Load unpacked** and choose the unzipped `slack-cleaner` folder.
@@ -48,21 +48,28 @@ Keep the folder somewhere permanent; Chrome loads the extension from it. To upda
 
 ## Development
 
+The extension is written in TypeScript (`src/`) and bundled with esbuild into the plain scripts Chrome loads from `extension/`. Requires Node 22.18+.
+
 ```bash
-npm install   # installs jsdom, used only for tests
-npm test
+npm install
+npm run build       # src/*.ts -> extension/content.js, extension/background.js
+npm run watch       # rebuild on save; then click ↻ on the extension
+npm run typecheck   # tsc, strict
+npm test            # node:test runs the .ts tests directly
+npm run package     # build + dist/slack-cleaner-v<version>.zip for a release
 ```
 
-Tests cover the selection logic ([`extension/selection.js`](extension/selection.js)) and the Slack DOM reading / delete flow ([`extension/slack-ui.js`](extension/slack-ui.js)) against a simulated Slack page, so they never touch a real workspace.
+Tests cover the selection logic and the Slack DOM reading / delete / auto-clear flow against a simulated Slack page (jsdom), so they never touch a real workspace.
 
 ### Layout
 
 | File | What it does |
 | --- | --- |
-| `extension/manifest.json` | MV3 manifest; content scripts run on `app.slack.com` |
-| `extension/background.js` | Toolbar button → tells the tab to toggle the panel |
-| `extension/content.js` | The in-page panel and the delete orchestration |
-| `extension/slack-ui.js` | Reading Slack's DOM and deleting via `chat.delete` (all selectors here) |
-| `extension/selection.js` | Pure selection/filter state (no DOM) |
+| `src/content.ts` | The in-page panel and the delete orchestration |
+| `src/slack-ui.ts` | Reading Slack's DOM, `chat.delete`, auto-clear scrolling (all selectors here) |
+| `src/selection.ts` | Pure selection/filter state (no DOM) |
+| `src/background.ts` | Toolbar button → tells the tab to toggle the panel |
+| `extension/manifest.json` | MV3 manifest; content script runs on `app.slack.com` |
 | `extension/panel.css` | Panel styling (light and dark themes) |
 | `extension/logo.svg` | Source for the logo; `icon16/48/128.png` are rendered from it |
+| `scripts/build.mjs`, `scripts/package.mjs` | Build and release-zip scripts |

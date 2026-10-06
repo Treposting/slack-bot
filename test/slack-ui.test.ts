@@ -1,6 +1,7 @@
-const { test } = require('node:test');
-const assert = require('node:assert');
-const { JSDOM } = require('jsdom');
+import { test } from 'node:test';
+import assert from 'node:assert';
+import { JSDOM } from 'jsdom';
+import * as UI from '../src/slack-ui.ts';
 
 // Build a Slack-like page so the DOM-reading logic can be exercised without a
 // real workspace. The markup mirrors the selectors in extension/slack-ui.js.
@@ -16,7 +17,7 @@ function buildDom({ withSender = true } = {}) {
   return dom;
 }
 
-function message(senderId, senderName, ts, text, showSender) {
+function message(senderId: string, senderName: string, ts: string, text: string, showSender: boolean) {
   const sender = showSender
     ? `<a data-qa="message_sender_name" data-message-sender="${senderId}">${senderName}</a>`
     : '';
@@ -28,18 +29,8 @@ function message(senderId, senderName, ts, text, showSender) {
   </div>`;
 }
 
-function loadUI(window) {
-  // Re-require the module against this window's globals.
-  const path = require.resolve('../extension/slack-ui');
-  delete require.cache[path];
-  global.window = undefined;
-  const mod = require('../extension/slack-ui');
-  return mod;
-}
-
 test('readSelf pulls the signed-in member from the user button', () => {
   const { window } = buildDom();
-  const UI = loadUI();
   const self = UI.readSelf(window.document);
   assert.strictEqual(self.id, 'U_ME');
   assert.strictEqual(self.name, 'Nahid Hassan');
@@ -47,7 +38,6 @@ test('readSelf pulls the signed-in member from the user button', () => {
 
 test('scanMessages flags mine, inherits author for grouped messages', () => {
   const { window } = buildDom();
-  const UI = loadUI();
   const { messages } = UI.scanMessages(window.document);
   assert.deepStrictEqual(
     messages.map((m) => ({ text: m.text, mine: m.isMine })),
@@ -61,21 +51,19 @@ test('scanMessages flags mine, inherits author for grouped messages', () => {
 
 test('deleteViaMenu drives the menu and resolves when the row is removed', async () => {
   const { window } = buildDom();
-  const { document, MouseEvent } = window;
-  global.MouseEvent = MouseEvent;
-  const UI = loadUI();
+  const { document } = window;
 
-  const node = document.querySelector('[data-qa="message_container"]');
+  const node = document.querySelector('[data-qa="message_container"]')!;
   // Wire up a fake Slack menu + confirm dialog that actually removes the node.
-  document.querySelector('[data-qa="more_message_actions"]').addEventListener('click', () => {
+  document.querySelector('[data-qa="more_message_actions"]')!.addEventListener('click', () => {
     const menu = document.createElement('div');
     menu.setAttribute('role', 'menu');
     menu.innerHTML = '<button data-qa="delete_message">Delete message…</button>';
-    menu.querySelector('button').addEventListener('click', () => {
+    menu.querySelector('button')!.addEventListener('click', () => {
       const dlg = document.createElement('div');
       dlg.setAttribute('role', 'dialog');
       dlg.innerHTML = '<button data-qa="dialog_go">Delete</button>';
-      dlg.querySelector('button').addEventListener('click', () => node.remove());
+      dlg.querySelector('button')!.addEventListener('click', () => node.remove());
       document.body.appendChild(dlg);
     });
     document.body.appendChild(menu);
@@ -88,10 +76,8 @@ test('deleteViaMenu drives the menu and resolves when the row is removed', async
 
 test('deleteViaMenu reports when the actions menu is missing', async () => {
   const { window } = buildDom();
-  global.MouseEvent = window.MouseEvent;
-  const UI = loadUI();
-  const node = window.document.querySelector('[data-qa="message_container"]');
-  node.querySelector('[data-qa="more_message_actions"]').remove();
+  const node = window.document.querySelector('[data-qa="message_container"]')!;
+  node.querySelector('[data-qa="more_message_actions"]')!.remove();
   const res = await UI.deleteViaMenu(node, window.document);
   assert.strictEqual(res.ok, false);
   assert.strictEqual(res.error, 'no_actions_menu');
@@ -114,30 +100,33 @@ function buildSessionDom() {
   return dom;
 }
 
-function fakeFetch(responses) {
-  const calls = [];
-  const fn = async (url, init) => {
-    calls.push({ url, fields: Object.fromEntries(init.body.entries()), credentials: init.credentials });
-    const r = responses.shift();
+interface FakeResponse {
+  status?: number;
+  retryAfter?: string;
+  body: { ok: boolean; error?: string; channel?: string; ts?: string };
+}
+
+function fakeFetch(responses: FakeResponse[]) {
+  const calls: { url: string; fields: Record<string, unknown>; credentials?: RequestCredentials }[] = [];
+  const fn: UI.FetchLike = async (url, init) => {
+    calls.push({ url, fields: Object.fromEntries((init.body as FormData).entries()), credentials: init.credentials });
+    const r = responses.shift()!;
     return { status: r.status || 200, headers: { get: () => r.retryAfter }, json: async () => r.body };
   };
-  fn.calls = calls;
-  return fn;
+  return Object.assign(fn, { calls });
 }
 
 test('readSession and messageRef find what chat.delete needs', () => {
   const { window } = buildSessionDom();
-  const UI = loadUI();
   const s = UI.readSession(window.document);
   assert.deepStrictEqual(s, { token: 'xoxc-test', apiBase: 'https://acme.slack.com/', userId: 'U_ME', teamId: 'T07446WQEJD' });
-  const node = window.document.querySelector('[data-qa="message_container"]');
+  const node = window.document.querySelector('[data-qa="message_container"]')!;
   assert.deepStrictEqual(UI.messageRef(node, window.document), { channel: 'D09Q8BVA9N0', ts: '1791298979.714889' });
 });
 
 test('deleteViaApi posts chat.delete like the Slack client', async () => {
   const { window } = buildSessionDom();
-  const UI = loadUI();
-  const node = window.document.querySelector('[data-qa="message_container"]');
+  const node = window.document.querySelector('[data-qa="message_container"]')!;
   const fetchImpl = fakeFetch([{ body: { ok: true, channel: 'D09Q8BVA9N0', ts: '1791298979.714889' } }]);
   const res = await UI.deleteViaApi(node, window.document, { fetchImpl });
   assert.deepStrictEqual(res, { ok: true });
@@ -148,8 +137,7 @@ test('deleteViaApi posts chat.delete like the Slack client', async () => {
 
 test('deleteViaApi retries on ratelimited and surfaces Slack errors', async () => {
   const { window } = buildSessionDom();
-  const UI = loadUI();
-  const node = window.document.querySelector('[data-qa="message_container"]');
+  const node = window.document.querySelector('[data-qa="message_container"]')!;
   const fetchImpl = fakeFetch([
     { status: 429, retryAfter: '0.01', body: { ok: false, error: 'ratelimited' } },
     { body: { ok: false, error: 'cant_delete_message' } },
@@ -161,9 +149,8 @@ test('deleteViaApi retries on ratelimited and surfaces Slack errors', async () =
 
 test('deleteViaApi treats "Failed to fetch" as done once the row disappears', async () => {
   const { window } = buildSessionDom();
-  const UI = loadUI();
-  const node = window.document.querySelector('[data-qa="message_container"]');
-  const fetchImpl = async () => {
+  const node = window.document.querySelector('[data-qa="message_container"]')!;
+  const fetchImpl: UI.FetchLike = async () => {
     setTimeout(() => node.remove(), 50); // Slack removes the row after deleting
     throw new TypeError('Failed to fetch');
   };

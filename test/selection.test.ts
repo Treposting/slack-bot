@@ -1,8 +1,8 @@
-const { test } = require('node:test');
-const assert = require('node:assert');
-const { SelectionModel, onlyMine } = require('../extension/selection');
+import { test } from 'node:test';
+import assert from 'node:assert';
+import { SelectionModel, onlyMine, type Message } from '../src/selection.ts';
 
-const msgs = [
+const msgs: Message[] = [
   { id: 'a', isMine: true, text: 'hello world' },
   { id: 'b', isMine: false, text: 'not mine' },
   { id: 'c', isMine: true, text: 'another HELLO' },

@@ -1,17 +1,21 @@
 // The in-page panel. Injected into app.slack.com; toggled from the toolbar
-// button. Uses SlackCleanerUI (DOM) and SlackCleanerSelection (pure state).
-(function () {
-  const UI = window.SlackCleanerUI;
-  const { SelectionModel } = window.SlackCleanerSelection;
-  const DELETE_GAP_MS = 1200; // stay well under Slack's chat.delete rate limit
+// button. Uses slack-ui (Slack's DOM) and selection (pure state).
+import * as UI from './slack-ui.ts';
+import { SelectionModel } from './selection.ts';
+import type { ScannedMessage, Self } from './slack-ui.ts';
 
-  const model = new SelectionModel();
-  let self = { id: '', name: '' };
+type Tab = 'pick' | 'auto';
+type Tone = '' | 'ok' | 'warn';
+
+(function () {  const DELETE_GAP_MS = 1200; // stay well under Slack's chat.delete rate limit
+
+  const model = new SelectionModel<ScannedMessage>();
+  let self: Self = { id: '', name: '' };
   let filterText = '';
-  let root = null;
+  let root: HTMLElement | null = null;
   let busy = false;
   let stopRequested = false;
-  let tab = 'pick';
+  let tab: Tab = 'pick';
 
   const LOGO = `<svg viewBox="0 0 128 128" aria-hidden="true"><rect width="128" height="128" rx="30" fill="#3DDC97" fill-opacity=".14"/>
     <path d="M30 34h44a8 8 0 0 1 8 8v28a8 8 0 0 1-8 8H50l-14 12v-12h-6a8 8 0 0 1-8-8V42a8 8 0 0 1 8-8z" fill="#fff"/>
@@ -25,20 +29,22 @@
     trash: '<svg viewBox="0 0 16 16"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   };
 
-  const esc = (s) =>
-    (s || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+  const ENTITIES: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+  const esc = (s: string | null | undefined) => (s || '').replace(/[&<>"']/g, (c) => ENTITIES[c]);
+  const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
 
-  function el(html) {
+  function el(html: string): HTMLElement {
     const t = document.createElement('template');
     t.innerHTML = html.trim();
-    return t.content.firstElementChild;
+    return t.content.firstElementChild as HTMLElement;
   }
-  const $ = (sel) => root.querySelector(`[data-sc="${sel}"]`);
+  // Look up one of the panel's [data-sc] parts. Only called once mounted.
+  const $ = <T extends HTMLElement = HTMLElement>(name: string): T =>
+    root!.querySelector<T>(`[data-sc="${name}"]`)!;
 
   function mount() {
     if (root) return;
-    root = el(`
+    const panel = el(`
       <div id="slack-cleaner" class="sc-panel" role="region" aria-label="Slack Cleaner">
         <header class="sc-head">
           <span class="sc-logo">${LOGO}</span>
@@ -86,39 +92,40 @@
           <div class="sc-status-text" data-sc="status-text"></div>
         </div>
       </div>`);
-    document.body.appendChild(root);
+    root = panel;
+    document.body.appendChild(panel);
 
     $('close').addEventListener('click', hide);
     $('rescan').addEventListener('click', rescan);
-    $('filter').addEventListener('input', (e) => {
-      filterText = e.target.value;
+    $<HTMLInputElement>('filter').addEventListener('input', (e) => {
+      filterText = (e.target as HTMLInputElement).value;
       renderList();
     });
-    $('all').addEventListener('change', (e) => {
-      model.setAll(model.visible(filterText).map((m) => m.id), e.target.checked);
+    $<HTMLInputElement>('all').addEventListener('change', (e) => {
+      model.setAll(model.visible(filterText).map((m) => m.id), (e.target as HTMLInputElement).checked);
       renderList();
     });
     $('delete').addEventListener('click', confirmAndDelete);
     $('auto').addEventListener('click', autoClear);
-    $('stop').addEventListener('click', () => {
+    $<HTMLButtonElement>('stop').addEventListener('click', () => {
       stopRequested = true;
-      $('stop').disabled = true;
+      $<HTMLButtonElement>('stop').disabled = true;
       $('stop').textContent = 'Stopping…';
     });
-    root.querySelectorAll('[data-tab]').forEach((b) => b.addEventListener('click', () => setTab(b.dataset.tab)));
+    panel.querySelectorAll<HTMLElement>('[data-tab]').forEach((b) => b.addEventListener('click', () => setTab(b.dataset.tab as Tab)));
     setTab(tab);
   }
 
-  function setTab(name) {
-    if (busy) return;
+  function setTab(name: Tab) {
+    if (busy || !root) return;
     tab = name;
-    root.querySelectorAll('[data-tab]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
-    root.querySelectorAll('[data-pane]').forEach((p) => (p.hidden = p.dataset.pane !== name));
+    root.querySelectorAll<HTMLElement>('[data-tab]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
+    root.querySelectorAll<HTMLElement>('[data-pane]').forEach((p) => (p.hidden = p.dataset.pane !== name));
   }
 
   function show() {
     mount();
-    root.style.display = 'flex';
+    root!.style.display = 'flex';
     rescan();
   }
   function hide() {
@@ -131,7 +138,7 @@
 
   // Progress strip under the panel. `done`/`total` drive the bar; total=null
   // shows an indeterminate shimmer. tone: '', 'ok' or 'warn'.
-  function status(text, { done = 0, total = null, tone = '' } = {}) {
+  function status(text: string, { done = 0, total = null as number | null, tone = '' as Tone } = {}) {
     const box = $('status');
     box.hidden = false;
     box.className = `sc-status${tone ? ` sc-${tone}` : ''}`;
@@ -147,8 +154,8 @@
     self = scan.self;
     model.setMessages(scan.messages);
     const mine = scan.messages.filter((m) => m.isMine).length;
-    $('n-view').textContent = scan.messages.length;
-    $('n-mine').textContent = mine;
+    $('n-view').textContent = String(scan.messages.length);
+    $('n-mine').textContent = String(mine);
     $('who').textContent = self.name ? `Signed in as ${self.name}` : 'Your messages, gone for good';
     renderList();
   }
@@ -171,33 +178,33 @@
             <span class="sc-time">${esc(time)}</span></span></label>`;
         })
         .join('');
-      list.querySelectorAll('.sc-row').forEach((rowEl) => {
-        rowEl.querySelector('input').addEventListener('change', () => {
-          model.toggle(rowEl.dataset.id);
+      list.querySelectorAll<HTMLElement>('.sc-row').forEach((rowEl) => {
+        rowEl.querySelector('input')!.addEventListener('change', () => {
+          model.toggle(rowEl.dataset.id!);
           renderList();
         });
       });
     }
 
     const head = model.headerState(filterText);
-    const all = $('all');
+    const all = $<HTMLInputElement>('all');
     all.checked = head.checked;
     all.indeterminate = head.indeterminate;
     all.disabled = busy || !visible.length;
-    $('n-sel').textContent = head.count;
-    const del = $('delete');
+    $('n-sel').textContent = String(head.count);
+    const del = $<HTMLButtonElement>('delete');
     del.disabled = busy || head.count === 0;
-    del.querySelector('span').textContent = head.count ? `Delete ${plural(head.count, 'message')}` : 'Delete selected';
+    del.querySelector('span')!.textContent = head.count ? `Delete ${plural(head.count, 'message')}` : 'Delete selected';
   }
 
-  function lockUi(on) {
+  function lockUi(on: boolean) {
     busy = on;
-    root.classList.toggle('sc-busy', on);
-    $('rescan').disabled = on;
-    $('filter').disabled = on;
+    root!.classList.toggle('sc-busy', on);
+    $<HTMLButtonElement>('rescan').disabled = on;
+    $<HTMLInputElement>('filter').disabled = on;
   }
 
-  function problemsHtml(problems) {
+  function problemsHtml(problems: string[]) {
     return problems.length
       ? `<ul class="sc-probs">${problems.slice(0, 4).map((p) => `<li>${esc(p)}</li>`).join('')}</ul>`
       : '';
@@ -216,15 +223,15 @@
     renderList();
     let done = 0;
     let failed = 0;
-    const problems = [];
+    const problems: string[] = [];
 
     for (const m of chosen) {
       status(`Deleting ${done + 1} of ${chosen.length}…`, { done, total: chosen.length });
-      let res;
+      let res: UI.DeleteResult;
       try {
         res = await UI.deleteMessage(m.node, document);
       } catch (e) {
-        res = { ok: false, error: String((e && e.message) || e) };
+        res = { ok: false, error: String((e as Error)?.message ?? e) };
       }
       done += 1;
       if (res.ok) {
@@ -259,7 +266,7 @@
     lockUi(true);
     stopRequested = false;
     const autoBtn = $('auto');
-    const stopBtn = $('stop');
+    const stopBtn = $<HTMLButtonElement>('stop');
     autoBtn.hidden = true;
     stopBtn.hidden = false;
     stopBtn.disabled = false;
@@ -293,7 +300,7 @@
     status(msg, { done: 1, total: 1, tone: result.failed ? 'warn' : 'ok' });
   }
 
-  chrome.runtime.onMessage.addListener((msg) => {
-    if (msg && msg.type === 'slack-cleaner:toggle') toggle();
+  chrome.runtime.onMessage.addListener((msg: { type?: string } | undefined) => {
+    if (msg?.type === 'slack-cleaner:toggle') toggle();
   });
 })();

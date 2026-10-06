@@ -1,12 +1,19 @@
-const { test } = require('node:test');
-const assert = require('node:assert');
-const { JSDOM } = require('jsdom');
+import { test } from 'node:test';
+import assert from 'node:assert';
+import { JSDOM } from 'jsdom';
+import * as UI from '../src/slack-ui.ts';
+
+interface Msg {
+  id: string;
+  author: string;
+  text: string;
+}
 
 // Simulate Slack's virtualised message list: only a window of the newest
 // messages is in the DOM, scrolling up loads older ones (prepended at the top,
 // since Slack shows oldest at top / newest at bottom), and deleting a message
 // removes just that node. This lets autoClear be exercised end to end.
-function buildVirtualDom(messages, { windowSize = 3, loadDelay = 0 } = {}) {
+function buildVirtualDom(messages: Msg[], { windowSize = 3, loadDelay = 0 } = {}) {
   const dom = new JSDOM(
     `<!doctype html><html><body>
       <button data-qa="user-button" aria-label="User menu: Me" data-member-id="U_ME"></button>
@@ -16,7 +23,7 @@ function buildVirtualDom(messages, { windowSize = 3, loadDelay = 0 } = {}) {
   );
   const { document } = dom.window;
   const M = messages.slice(); // M[0] oldest … M[last] newest
-  const scroller = document.getElementById('scroller');
+  const scroller = document.getElementById('scroller')!;
   let oldestLoaded = Math.max(0, M.length - windowSize);
   let top = 0;
   let pending = false;
@@ -28,7 +35,7 @@ function buildVirtualDom(messages, { windowSize = 3, loadDelay = 0 } = {}) {
   });
   Object.defineProperty(scroller, 'scrollTop', {
     get: () => top,
-    set: (v) => {
+    set: (v: number) => {
       let clamped = Math.max(0, Math.min(v, scroller.scrollHeight));
       // Reaching the top loads an older message; the prepended content grows
       // above the viewport, so the scroll position is pushed back down off 0.
@@ -53,7 +60,7 @@ function buildVirtualDom(messages, { windowSize = 3, loadDelay = 0 } = {}) {
     configurable: true,
   });
 
-  function nodeFor(m) {
+  function nodeFor(m: Msg) {
     const el = document.createElement('div');
     el.setAttribute('data-qa', 'message_container');
     el.setAttribute('data-item-key', m.id);
@@ -69,18 +76,18 @@ function buildVirtualDom(messages, { windowSize = 3, loadDelay = 0 } = {}) {
 
   // Delegated menu → delete → confirm that removes just the clicked message.
   document.addEventListener('click', (e) => {
-    const more = e.target.closest && e.target.closest('[data-qa="more_message_actions"]');
+    const more = (e.target as Element).closest?.('[data-qa="more_message_actions"]');
     if (!more) return;
-    const row = more.closest('[data-qa="message_container"]');
+    const row = more.closest('[data-qa="message_container"]')!;
     const menu = document.createElement('div');
     menu.setAttribute('role', 'menu');
     menu.innerHTML = '<button data-qa="delete_message">Delete message…</button>';
-    menu.querySelector('button').addEventListener('click', () => {
+    menu.querySelector('button')!.addEventListener('click', () => {
       menu.remove();
       const dlg = document.createElement('div');
       dlg.setAttribute('role', 'dialog');
       dlg.innerHTML = '<button data-qa="dialog_go">Delete</button>';
-      dlg.querySelector('button').addEventListener('click', () => {
+      dlg.querySelector('button')!.addEventListener('click', () => {
         row.remove();
         dlg.remove();
       });
@@ -89,18 +96,11 @@ function buildVirtualDom(messages, { windowSize = 3, loadDelay = 0 } = {}) {
     document.body.appendChild(menu);
   });
 
-  dom.window.MouseEvent = dom.window.MouseEvent;
   top = scroller.scrollHeight; // start at the bottom, like a real chat
   return dom;
 }
 
-function loadUI() {
-  delete require.cache[require.resolve('../extension/slack-ui')];
-  global.window = undefined;
-  return require('../extension/slack-ui');
-}
-
-const mk = (id, mine, text) => ({ id: `${id}.000`, author: mine ? 'U_ME' : 'U_OTHER', text });
+const mk = (id: number, mine: boolean, text: string): Msg => ({ id: `${id}.000`, author: mine ? 'U_ME' : 'U_OTHER', text });
 
 test('autoClear walks to the top and deletes only my messages', async () => {
   const msgs = [
@@ -113,8 +113,6 @@ test('autoClear walks to the top and deletes only my messages', async () => {
     mk(1006, true, 'newest mine'),
   ];
   const dom = buildVirtualDom(msgs, { windowSize: 2 });
-  global.MouseEvent = dom.window.MouseEvent;
-  const UI = loadUI();
 
   const res = await UI.autoClear(dom.window.document, { gap: 0, scrollPause: 0, loadTimeout: 30 });
 
@@ -128,8 +126,6 @@ test('autoClear walks to the top and deletes only my messages', async () => {
 test('autoClear stops promptly when asked', async () => {
   const msgs = Array.from({ length: 10 }, (_, i) => mk(2000 + i, true, `m${i}`));
   const dom = buildVirtualDom(msgs, { windowSize: 3 });
-  global.MouseEvent = dom.window.MouseEvent;
-  const UI = loadUI();
 
   let calls = 0;
   const res = await UI.autoClear(dom.window.document, {
@@ -150,8 +146,6 @@ test('autoClear waits for slow history loads at the top instead of stopping', as
     mk(3003, true, 'newest mine'),
   ];
   const dom = buildVirtualDom(msgs, { windowSize: 1, loadDelay: 120 });
-  global.MouseEvent = dom.window.MouseEvent;
-  const UI = loadUI();
 
   const res = await UI.autoClear(dom.window.document, { gap: 0, scrollPause: 10, loadTimeout: 900 });
 
@@ -163,7 +157,6 @@ test('autoClear waits for slow history loads at the top instead of stopping', as
 
 test('getScroller and firstMessageId read the list', () => {
   const dom = buildVirtualDom([mk(1, true, 'a'), mk(2, true, 'b')], { windowSize: 2 });
-  const UI = loadUI();
   assert.ok(UI.getScroller(dom.window.document));
   assert.strictEqual(UI.firstMessageId(dom.window.document), '1.000');
 });

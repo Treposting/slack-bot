@@ -1,3 +1,7 @@
 node_modules/
 .env
 .DS_Store
+dist/
+# Built from src/ by `npm run build`
+extension/content.js
+extension/background.js
