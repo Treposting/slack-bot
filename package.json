@@ -1,15 +1,11 @@
 {
   "name": "slack-cleaner",
   "version": "1.0.0",
-  "description": "A web UI to find and delete your own Slack messages",
-  "main": "src/server.js",
+  "description": "Chrome extension to select and delete your own Slack messages",
   "directories": {
     "test": "test"
   },
   "scripts": {
-    "start": "node src/server.js",
-    "start:env": "node --env-file=.env src/server.js",
-    "start:dry": "DRY_RUN=1 node src/server.js",
     "test": "node --test"
   },
   "repository": {
@@ -28,5 +24,8 @@
   "engines": {
     "node": ">=20.6"
   },
-  "private": true
+  "private": true,
+  "devDependencies": {
+    "jsdom": "^29.1.1"
+  }
 }

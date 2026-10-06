@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "Slack Cleaner",
+  "version": "1.0.0",
+  "description": "Select and delete your own Slack messages in the conversation or thread you have open.",
+  "permissions": ["activeTab"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Open Slack Cleaner"
+  },
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://app.slack.com/*"],
+      "js": ["selection.js", "slack-ui.js", "content.js"],
+      "css": ["panel.css"],
+      "run_at": "document_idle"
+    }
+  ]
+}

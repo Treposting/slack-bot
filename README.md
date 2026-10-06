@@ -1,79 +1,65 @@
 # Slack Cleaner
 
-A small web app for finding and deleting **your own** Slack messages.
+A Chrome extension for deleting **your own** Slack messages, using the Slack account you're already signed in to in the browser. No new Slack app, no token to copy, nothing for a workspace admin to approve.
 
-Pick a channel, private channel, group DM or DM, choose a date range, and the app lists every message you wrote there (optionally including your thread replies). Select the ones you want gone, confirm by typing `DELETE`, and watch them disappear with a progress bar.
+Open any conversation, thread or DM in Slack, click the extension button, pick the messages you want gone, and it deletes them the same way you would by hand, through Slack's own "Delete message" action, after you confirm.
 
-- Only your own messages are ever listed or deleted.
-- Nothing is deleted without the confirmation step.
-- Your token lives only in the server's memory and is gone when you sign out or stop the app.
-- Rate limits from Slack are handled automatically (it waits and retries).
-- `DRY_RUN=1` lets you click through the whole flow without deleting anything.
+## How it works (and why it's safe)
 
-## Why a user token?
+The extension runs only on `app.slack.com`, inside the tab you've already signed in to. For each message you select it clicks Slack's own message menu → **Delete message…** → confirms. It does **not** read, copy or store your Slack token, password or session, so there's nothing that looks like a rogue app to your workspace.
 
-Slack only lets a person delete their own messages with a **user token** (`xoxp-…`). A bot token (`xoxb-…`) can only delete messages the bot itself posted, so this app asks for user scopes, not bot scopes.
+- Only messages Slack shows as yours are listed, and only in the conversation you have open.
+- Nothing is deleted until you select messages and confirm a warning dialog.
+- Deletes are paced (about one per 1.2s) so Slack doesn't rate-limit you.
+- If a message can't be removed (some workspaces block it), it's skipped and shown in the panel.
+- Deletion uses Slack's real delete, so **it cannot be undone.**
 
-## 1. Create the Slack app (one time)
+## Install
 
-1. Go to <https://api.slack.com/apps> → **Create New App** → **From an app manifest**.
-2. Pick your workspace and paste the contents of [`slack-app-manifest.yml`](slack-app-manifest.yml).
-3. Click **Create**, then **Install to Workspace** and approve.
-4. Open **OAuth & Permissions** and copy the **User OAuth Token** (starts with `xoxp-`).
+The extension isn't on the Chrome Web Store; load it unpacked:
 
-If your workspace requires admin approval for apps, an admin will need to approve it first.
+1. Download/clone this repo.
+2. Open `chrome://extensions` in Chrome (or any Chromium browser).
+3. Turn on **Developer mode** (top right).
+4. Click **Load unpacked** and choose the `extension/` folder.
+5. The 🧹 Slack Cleaner button appears in your toolbar (pin it if you like).
 
-## 2. Run it
+## Use it
 
-Requires Node.js 20.6 or newer.
+1. Go to <https://app.slack.com> and open the channel, thread or DM you want to clean up.
+2. Click the **Slack Cleaner** toolbar button. A panel opens on the right.
+3. It lists your messages that are currently on screen. Slack only loads messages as you scroll, so to reach older ones, scroll up in the conversation and click **Rescan**.
+4. Tick the messages to delete (or the select-all box), optionally filter by text, then click **Delete selected** and confirm.
+5. Watch the count; any that couldn't be deleted are listed at the bottom.
 
-```bash
-npm install
-npm start            # http://localhost:3000
-```
+### Tips
 
-Open <http://localhost:3000> and paste your `xoxp-` token.
+- Work one conversation at a time. Switching conversations? Click **Rescan**.
+- For a long history, scroll + Rescan in chunks rather than loading everything at once.
+- The toolbar button toggles the panel open and closed.
 
-To try it safely first:
+## Limitations
 
-```bash
-npm run start:dry    # same UI, but nothing is actually deleted
-```
-
-### Optional settings
-
-Copy `.env.example` to `.env`, fill in what you need, and run `npm run start:env`. `.env` is git-ignored.
-
-| Variable | What it does |
-| --- | --- |
-| `SLACK_USER_TOKEN` | Skip the sign-in screen and use this token |
-| `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET` | Show a **Sign in with Slack** button instead of pasting a token |
-| `BASE_URL` | Public URL of the app, used for the OAuth redirect (default `http://localhost:3000`) |
-| `DRY_RUN` | `1` to simulate deletes |
-| `PORT`, `HOST` | Where to listen (default `127.0.0.1:3000`) |
-
-For **Sign in with Slack**, the redirect URL `<BASE_URL>/auth/slack/callback` must be listed under **OAuth & Permissions → Redirect URLs** (the manifest already adds the localhost one). Slack may require HTTPS for redirect URLs that aren't localhost.
-
-## Scopes used
-
-| Scope | Why |
-| --- | --- |
-| `channels:read`, `groups:read`, `im:read`, `mpim:read` | List the conversations you're in |
-| `channels:history`, `groups:history`, `im:history`, `mpim:history` | Read messages to find yours |
-| `chat:write` | Delete your messages (`chat.delete`) |
-| `users:read` | Show names for direct messages |
+- Only acts on messages Slack has rendered (what you've scrolled through), not your entire history at once.
+- Slack's web layout changes occasionally; if scanning or deleting stops working, the selectors are all grouped at the top of [`extension/slack-ui.js`](extension/slack-ui.js) for a quick fix.
+- Some workspaces disable message deletion for members; those will report `no_delete_option`.
 
 ## Development
 
 ```bash
+npm install   # installs jsdom, used only for tests
 npm test
 ```
 
-Tests run against a fake Slack API, so they never touch a real workspace.
+Tests cover the selection logic ([`extension/selection.js`](extension/selection.js)) and the Slack DOM reading / delete flow ([`extension/slack-ui.js`](extension/slack-ui.js)) against a simulated Slack page, so they never touch a real workspace.
 
-## Notes and limits
+### Layout
 
-- The app is meant to run on your own machine. It binds to `127.0.0.1` by default; don't expose it publicly without adding real authentication.
-- A search returns up to 1000 of your messages per channel. Narrow the date range to see more.
-- Slack limits `chat.delete` to roughly 50 calls a minute, so large clean-ups take a while.
-- Some workspaces block members from deleting their own messages; those deletes will show `cant_delete_message`.
+| File | What it does |
+| --- | --- |
+| `extension/manifest.json` | MV3 manifest; content scripts run on `app.slack.com` |
+| `extension/background.js` | Toolbar button → tells the tab to toggle the panel |
+| `extension/content.js` | The in-page panel and the delete orchestration |
+| `extension/slack-ui.js` | Reading Slack's DOM and driving its delete menu (all selectors here) |
+| `extension/selection.js` | Pure selection/filter state (no DOM) |
+| `extension/panel.css` | Panel styling |
