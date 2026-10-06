@@ -18,11 +18,13 @@ The extension runs only on `app.slack.com`, inside the tab you've already signed
 
 The extension isn't on the Chrome Web Store; load it unpacked:
 
-1. Download/clone this repo.
+1. Download the latest `slack-cleaner-vX.Y.Z.zip` from [Releases](https://github.com/Treposting/slack-bot/releases/latest) and unzip it (or clone this repo and use the `extension/` folder).
 2. Open `chrome://extensions` in Chrome (or any Chromium browser).
 3. Turn on **Developer mode** (top right).
-4. Click **Load unpacked** and choose the `extension/` folder.
-5. The 🧹 Slack Cleaner button appears in your toolbar (pin it if you like).
+4. Click **Load unpacked** and choose the unzipped `slack-cleaner` folder.
+5. The Slack Cleaner button appears in your toolbar (pin it if you like).
+
+Keep the folder somewhere permanent; Chrome loads the extension from it. To update, replace the folder with a newer release and click ↻ on the extension.
 
 ## Use it
 
