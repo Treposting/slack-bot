@@ -187,3 +187,44 @@
 @media (prefers-reduced-motion: reduce) {
   #slack-cleaner.sc-panel, #slack-cleaner .sc-bar i.sc-indet { animation: none; }
 }
+
+/* In-panel confirmation (replaces the browser's confirm pop-up) */
+#slack-cleaner .sc-confirm {
+  position: absolute; inset: 0; z-index: 2;
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+  background: color-mix(in srgb, var(--sc-brand-2) 45%, transparent);
+  backdrop-filter: blur(3px);
+  animation: sc-fade .15s ease-out;
+}
+#slack-cleaner .sc-confirm-card {
+  width: 100%; padding: 20px 18px 16px; border-radius: 14px;
+  background: var(--sc-bg); border: 1px solid var(--sc-line); box-shadow: var(--sc-shadow);
+  animation: sc-in .18s ease-out;
+}
+#slack-cleaner .sc-confirm-icon {
+  display: grid; place-items: center; width: 40px; height: 40px; margin-bottom: 12px;
+  border-radius: 12px; background: var(--sc-danger-soft); color: var(--sc-danger);
+}
+#slack-cleaner .sc-confirm-icon svg { width: 22px; height: 22px; }
+#slack-cleaner .sc-confirm h2 { margin: 0 0 6px; font-size: 16px; font-weight: 800; color: var(--sc-text); }
+#slack-cleaner .sc-confirm-body { color: var(--sc-muted); }
+#slack-cleaner .sc-confirm-body p { margin: 0; }
+#slack-cleaner .sc-confirm-body p + p, #slack-cleaner .sc-preview + p { margin-top: 8px; }
+#slack-cleaner .sc-confirm-body b { color: var(--sc-text); }
+#slack-cleaner .sc-preview {
+  margin: 10px 0 0; padding: 8px 10px; list-style: none;
+  border-radius: 10px; background: var(--sc-surface); color: var(--sc-text);
+}
+#slack-cleaner .sc-preview li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#slack-cleaner .sc-preview li + li { margin-top: 4px; }
+#slack-cleaner .sc-preview .sc-more { color: var(--sc-muted); font-size: 12px; }
+#slack-cleaner .sc-confirm-actions { display: flex; gap: 8px; margin-top: 16px; }
+#slack-cleaner .sc-confirm-actions .sc-btn { flex: 1; }
+#slack-cleaner .sc-secondary { background: var(--sc-surface); color: var(--sc-text); border-color: var(--sc-line); }
+@keyframes sc-fade { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  #slack-cleaner .sc-confirm, #slack-cleaner .sc-confirm-card { animation: none; }
+}
+/* Short panes (e.g. Clear everything) grow so the confirm card fits. */
+#slack-cleaner.sc-panel.sc-asking { min-height: 440px; }
+#slack-cleaner .sc-btn span { white-space: nowrap; }

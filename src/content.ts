@@ -26,6 +26,7 @@ type Tone = '' | 'ok' | 'warn';
     close: '<svg viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
     refresh: '<svg viewBox="0 0 16 16"><path d="M13 8a5 5 0 1 1-1.5-3.6M13 2.5v2.5h-2.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     search: '<svg viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10.5 10.5L14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
+    warn: '<svg viewBox="0 0 24 24"><path d="M12 3.5L2.5 20h19L12 3.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M12 10v4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="17.2" r="1.1" fill="currentColor"/></svg>',
     trash: '<svg viewBox="0 0 16 16"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   };
 
@@ -90,6 +91,18 @@ type Tone = '' | 'ok' | 'warn';
         <div class="sc-status" data-sc="status" hidden>
           <div class="sc-bar"><i data-sc="bar"></i></div>
           <div class="sc-status-text" data-sc="status-text"></div>
+        </div>
+
+        <div class="sc-confirm" data-sc="confirm" role="alertdialog" aria-modal="true" aria-labelledby="sc-confirm-title" hidden>
+          <div class="sc-confirm-card">
+            <span class="sc-confirm-icon">${ICON.warn}</span>
+            <h2 id="sc-confirm-title" data-sc="confirm-title"></h2>
+            <div class="sc-confirm-body" data-sc="confirm-body"></div>
+            <div class="sc-confirm-actions">
+              <button class="sc-btn sc-secondary" data-sc="confirm-no">Cancel</button>
+              <button class="sc-btn sc-danger" data-sc="confirm-yes"></button>
+            </div>
+          </div>
         </div>
       </div>`);
     root = panel;
@@ -204,6 +217,47 @@ type Tone = '' | 'ok' | 'warn';
     $<HTMLInputElement>('filter').disabled = on;
   }
 
+  // Ask for confirmation inside the panel instead of a browser pop-up.
+  // Resolves true on confirm; Cancel, Escape or a click outside the card cancel.
+  function askConfirm({ title, body, confirm }: { title: string; body: string; confirm: string }): Promise<boolean> {
+    const box = $('confirm');
+    const yes = $<HTMLButtonElement>('confirm-yes');
+    const no = $<HTMLButtonElement>('confirm-no');
+    $('confirm-title').textContent = title;
+    $('confirm-body').innerHTML = body;
+    yes.innerHTML = `${ICON.trash}<span>${esc(confirm)}</span>`;
+    box.hidden = false;
+    root!.classList.add('sc-asking');
+    no.focus(); // the safe choice is the default
+
+    return new Promise((resolve) => {
+      const finish = (answer: boolean) => {
+        box.hidden = true;
+        root!.classList.remove('sc-asking');
+        yes.removeEventListener('click', onYes);
+        no.removeEventListener('click', onNo);
+        box.removeEventListener('click', onBackdrop);
+        box.removeEventListener('keydown', onKey);
+        resolve(answer);
+      };
+      const onYes = () => finish(true);
+      const onNo = () => finish(false);
+      const onBackdrop = (e: MouseEvent) => {
+        if (e.target === box) finish(false);
+      };
+      const onKey = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') {
+          e.stopPropagation();
+          finish(false);
+        }
+      };
+      yes.addEventListener('click', onYes);
+      no.addEventListener('click', onNo);
+      box.addEventListener('click', onBackdrop);
+      box.addEventListener('keydown', onKey);
+    });
+  }
+
   function problemsHtml(problems: string[]) {
     return problems.length
       ? `<ul class="sc-probs">${problems.slice(0, 4).map((p) => `<li>${esc(p)}</li>`).join('')}</ul>`
@@ -213,10 +267,16 @@ type Tone = '' | 'ok' | 'warn';
   async function confirmAndDelete() {
     const chosen = model.selectedMessages();
     if (!chosen.length || busy) return;
-    const ok = window.confirm(
-      `Permanently delete ${plural(chosen.length, 'message')} of yours?\n\n` +
-        `This uses Slack's own delete, so it cannot be undone.`
-    );
+    const preview = chosen
+      .slice(0, 3)
+      .map((m) => `<li>${esc((m.text || '(no text)').slice(0, 80))}</li>`)
+      .join('');
+    const more = chosen.length > 3 ? `<li class="sc-more">and ${chosen.length - 3} more</li>` : '';
+    const ok = await askConfirm({
+      title: `Delete ${plural(chosen.length, 'message')}?`,
+      body: `<ul class="sc-preview">${preview}${more}</ul><p>This can't be undone.</p>`,
+      confirm: `Delete ${chosen.length}`,
+    });
     if (!ok) return;
 
     lockUi(true);
@@ -255,12 +315,13 @@ type Tone = '' | 'ok' | 'warn';
 
   async function autoClear() {
     if (busy) return;
-    const ok = window.confirm(
-      'Delete ALL of your messages in this conversation?\n\n' +
-        'It starts at the newest message and scrolls up to the top, deleting only ' +
-        "messages you sent. This uses Slack's own delete and cannot be undone. " +
-        'You can press Stop at any time.'
-    );
+    const ok = await askConfirm({
+      title: 'Delete all your messages here?',
+      body:
+        '<p>Every message <b>you</b> sent in this conversation will be deleted, from the newest up to the very top. ' +
+        "Other people's messages aren't touched.</p><p>You can press Stop at any time, but deleted messages can't be restored.</p>",
+      confirm: 'Delete all',
+    });
     if (!ok) return;
 
     lockUi(true);
