@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Slack Cleaner</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- Sign-in -->
+  <section id="login" class="login hidden">
+    <div class="login-card">
+      <div class="logo">🧹</div>
+      <h1>Slack Cleaner</h1>
+      <p class="muted">Find and delete your own Slack messages, channel by channel.</p>
+      <a id="oauth-btn" class="btn btn-primary btn-block hidden" href="/auth/slack">Sign in with Slack</a>
+      <div id="or" class="or hidden"><span>or</span></div>
+      <form id="token-form">
+        <label for="token">User OAuth token</label>
+        <input id="token" type="password" placeholder="xoxp-…" autocomplete="off" required />
+        <button class="btn btn-primary btn-block" type="submit">Connect</button>
+      </form>
+      <p class="hint">Your token stays in this app's memory on your machine and is never saved to disk. See the README for how to get one.</p>
+      <p id="login-error" class="error"></p>
+    </div>
+  </section>
+
+  <!-- App -->
+  <div id="app" class="app hidden">
+    <aside class="sidebar">
+      <div class="brand"><span>🧹</span> Slack Cleaner</div>
+      <input id="channel-filter" class="search" type="search" placeholder="Filter channels" />
+      <nav id="channels" class="channels"><div class="muted pad">Loading channels…</div></nav>
+      <div class="me">
+        <div>
+          <div id="me-name" class="me-name"></div>
+          <div id="me-team" class="muted small"></div>
+        </div>
+        <button id="logout" class="btn btn-ghost small">Sign out</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="toolbar">
+        <div>
+          <h2 id="channel-title">Pick a channel</h2>
+          <div id="dry-run" class="badge hidden">Dry run: nothing will be deleted</div>
+        </div>
+        <form id="filters" class="filters">
+          <label>From <input id="from" type="date" /></label>
+          <label>To <input id="to" type="date" /></label>
+          <label class="check"><input id="threads" type="checkbox" /> Include thread replies</label>
+          <button class="btn btn-secondary" type="submit" id="load-btn" disabled>Find my messages</button>
+        </form>
+      </header>
+
+      <div id="selection-bar" class="selection-bar hidden">
+        <label class="check"><input id="select-all" type="checkbox" /> <span id="selection-count">0 selected</span></label>
+        <input id="text-filter" class="search inline" type="search" placeholder="Filter by text" />
+        <button id="delete-btn" class="btn btn-danger" disabled>Delete selected</button>
+      </div>
+
+      <section id="messages" class="messages">
+        <div class="empty">
+          <div class="empty-icon">💬</div>
+          <p>Choose a channel on the left, set a date range, and click <b>Find my messages</b>.</p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Confirm dialog -->
+  <dialog id="confirm" class="dialog">
+    <h3>Delete <span id="confirm-count"></span>?</h3>
+    <p class="muted">This permanently removes them from <b id="confirm-channel"></b>. Slack has no undo.</p>
+    <ul id="confirm-preview" class="preview"></ul>
+    <label for="confirm-input">Type <b>DELETE</b> to confirm</label>
+    <input id="confirm-input" autocomplete="off" />
+    <div class="dialog-actions">
+      <button id="confirm-cancel" class="btn btn-ghost">Cancel</button>
+      <button id="confirm-ok" class="btn btn-danger" disabled>Delete</button>
+    </div>
+  </dialog>
+
+  <!-- Progress dialog -->
+  <dialog id="progress" class="dialog">
+    <h3 id="progress-title">Deleting…</h3>
+    <div class="bar"><div id="progress-fill" class="bar-fill"></div></div>
+    <p id="progress-text" class="muted"></p>
+    <ul id="progress-errors" class="preview errors"></ul>
+    <div class="dialog-actions">
+      <button id="progress-close" class="btn btn-secondary" disabled>Done</button>
+    </div>
+  </dialog>
+
+  <div id="toast" class="toast"></div>
+  <script src="app.js"></script>
+</body>
+</html>

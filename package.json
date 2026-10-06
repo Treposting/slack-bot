@@ -1,0 +1,32 @@
+{
+  "name": "slack-cleaner",
+  "version": "1.0.0",
+  "description": "A web UI to find and delete your own Slack messages",
+  "main": "src/server.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "start:env": "node --env-file=.env src/server.js",
+    "start:dry": "DRY_RUN=1 node src/server.js",
+    "test": "node --test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/treposting/slack-bot.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/treposting/slack-bot/issues"
+  },
+  "homepage": "https://github.com/treposting/slack-bot#readme",
+  "dependencies": {
+    "express": "^4.22.3"
+  },
+  "engines": {
+    "node": ">=20.6"
+  },
+  "private": true
+}
