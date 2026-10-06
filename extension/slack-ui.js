@@ -15,6 +15,8 @@
     confirmDialog: '[data-qa="dialog"], .c-sk-modal, [role="dialog"]',
     // The currently signed-in member, from the account switcher / avatar button.
     selfButton: '[data-qa="user-button"], [data-qa="current_user_button"]',
+    // The scrollable container holding the message list.
+    scroller: '.c-virtual_list__scroll_container, [data-qa="slack_kit_list"], [data-qa="message_pane"] .c-scrollbar__hider',
   };
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -150,7 +152,89 @@
     return gone ? { ok: true } : { ok: false, error: 'still_present' };
   }
 
-  const api = { SEL, readSelf, parseMessage, scanMessages, deleteViaMenu, messageId, sleep };
+  function getScroller(doc = document) {
+    return doc.querySelector(SEL.scroller) || null;
+  }
+
+  function firstMessageId(doc = document) {
+    const el = doc.querySelector(SEL.message);
+    return el ? messageId(el) : null;
+  }
+
+  // Clear the signed-in user's messages across a whole conversation: start at
+  // the bottom (newest), delete every message of theirs that's rendered, scroll
+  // up to load older ones, and repeat until the top is reached or nothing new
+  // loads. Slack virtualises the list, so deleting what's on screen and then
+  // scrolling is the reliable way to walk the full history.
+  async function autoClear(doc = document, opts = {}) {
+    const {
+      onProgress = () => {},
+      shouldStop = () => false,
+      deleteOne = (node) => deleteViaMenu(node, doc),
+      gap = 1200,
+      scrollPause = 700,
+      maxRounds = 600,
+      maxIdle = 3, // rounds with no deletes and no new messages before stopping
+    } = opts;
+
+    const scroller = getScroller(doc);
+    let total = 0;
+    let failed = 0;
+    let idle = 0;
+    const problems = [];
+
+    if (scroller) {
+      scroller.scrollTop = scroller.scrollHeight; // begin at the newest message
+      await sleep(scrollPause);
+    }
+
+    for (let round = 0; round < maxRounds; round++) {
+      if (shouldStop()) break;
+
+      const { messages } = scanMessages(doc);
+      const mine = messages.filter((m) => m.isMine && m.node && doc.contains(m.node));
+      let deletedThisRound = 0;
+      for (const m of mine) {
+        if (shouldStop()) break;
+        let res;
+        try {
+          res = await deleteOne(m.node);
+        } catch (e) {
+          res = { ok: false, error: String((e && e.message) || e) };
+        }
+        total += 1;
+        if (res.ok) deletedThisRound += 1;
+        else {
+          failed += 1;
+          problems.push(`${(m.text || m.id).slice(0, 40)}: ${res.error}`);
+        }
+        onProgress({ total, failed, phase: 'deleting' });
+        await sleep(gap);
+      }
+
+      if (shouldStop() || !scroller) break;
+
+      // Load older messages by scrolling up.
+      const prevTop = scroller.scrollTop;
+      const prevFirst = firstMessageId(doc);
+      const step = Math.max(300, Math.floor(scroller.clientHeight * 0.8));
+      scroller.scrollTop = Math.max(0, scroller.scrollTop - step);
+      await sleep(scrollPause);
+
+      const scrolled = scroller.scrollTop < prevTop - 1;
+      const loadedNew = firstMessageId(doc) !== prevFirst;
+      const progressed = deletedThisRound > 0 || scrolled || loadedNew;
+      idle = progressed ? 0 : idle + 1;
+      onProgress({ total, failed, phase: 'scrolling' });
+
+      if (scroller.scrollTop <= 0 && !loadedNew && deletedThisRound === 0) break; // at the top, nothing left
+      if (idle >= maxIdle) break; // stuck (can't scroll, nothing deleting)
+    }
+
+    return { total, failed, problems, reachedTop: scroller ? scroller.scrollTop <= 0 : true };
+  }
+
+  const api = { SEL, readSelf, parseMessage, scanMessages, deleteViaMenu, messageId, getScroller, firstMessageId, autoClear, sleep };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (root) root.SlackCleanerUI = api;
 })(typeof window !== 'undefined' ? window : null);

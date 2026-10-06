@@ -10,6 +10,7 @@
   let filterText = '';
   let root = null;
   let busy = false;
+  let stopRequested = false;
 
   const esc = (s) =>
     (s || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -39,6 +40,11 @@
           <div class="sc-note" data-sc="foot"></div>
           <button class="sc-btn sc-danger" data-sc="delete" disabled>Delete selected</button>
         </footer>
+        <div class="sc-auto">
+          <button class="sc-btn sc-auto-btn" data-sc="auto">🧹 Clear all my messages (scroll to top)</button>
+          <button class="sc-btn sc-stop" data-sc="stop" hidden>Stop</button>
+          <div class="sc-note sc-auto-note">Starts at the newest message and works up to the top of this conversation, deleting only yours.</div>
+        </div>
       </div>`);
     document.body.appendChild(root);
 
@@ -53,6 +59,8 @@
       renderList();
     });
     root.querySelector('[data-sc="delete"]').addEventListener('click', confirmAndDelete);
+    root.querySelector('[data-sc="auto"]').addEventListener('click', autoClear);
+    root.querySelector('[data-sc="stop"]').addEventListener('click', () => { stopRequested = true; });
   }
 
   function show() {
@@ -154,6 +162,52 @@
     foot.innerHTML = failed
       ? `Deleted ${done - failed}, ${failed} couldn't be removed.<br><span class="sc-prob">${esc(problems.slice(0, 5).join(' · '))}</span>`
       : `Deleted ${done} message${done === 1 ? '' : 's'}.`;
+  }
+
+  async function autoClear() {
+    if (busy) return;
+    const ok = window.confirm(
+      'Delete ALL of your messages in this conversation?\n\n' +
+        'It starts at the newest message and scrolls up to the top, deleting only ' +
+        'messages you sent. This uses Slack\'s own delete and cannot be undone. ' +
+        'You can press Stop at any time.'
+    );
+    if (!ok) return;
+
+    busy = true;
+    stopRequested = false;
+    const foot = root.querySelector('[data-sc="foot"]');
+    const autoBtn = root.querySelector('[data-sc="auto"]');
+    const stopBtn = root.querySelector('[data-sc="stop"]');
+    autoBtn.hidden = true;
+    stopBtn.hidden = false;
+    root.querySelector('[data-sc="delete"]').disabled = true;
+    root.querySelector('[data-sc="rescan"]').disabled = true;
+
+    const result = await UI.autoClear(document, {
+      shouldStop: () => stopRequested,
+      onProgress: ({ total, failed, phase }) => {
+        foot.textContent =
+          phase === 'scrolling'
+            ? `Loading older messages… (${total - failed} deleted so far)`
+            : `Deleting… ${total - failed} removed${failed ? `, ${failed} failed` : ''}`;
+      },
+    });
+
+    busy = false;
+    autoBtn.hidden = false;
+    stopBtn.hidden = true;
+    root.querySelector('[data-sc="rescan"]').disabled = false;
+    rescan();
+
+    const cleared = result.total - result.failed;
+    let msg = stopRequested
+      ? `Stopped. Deleted ${cleared} message${cleared === 1 ? '' : 's'}.`
+      : `Done. Deleted ${cleared} message${cleared === 1 ? '' : 's'}${result.reachedTop ? ' up to the top' : ''}.`;
+    if (result.failed) {
+      msg += `<br><span class="sc-prob">${result.failed} couldn't be removed: ${esc(result.problems.slice(0, 4).join(' · '))}</span>`;
+    }
+    foot.innerHTML = msg;
   }
 
   chrome.runtime.onMessage.addListener((msg) => {
