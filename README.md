@@ -28,9 +28,9 @@ The extension isn't on the Chrome Web Store; load it unpacked:
 
 1. Go to <https://app.slack.com> and open the channel, thread or DM you want to clean up.
 2. Click the **Slack Cleaner** toolbar button. A panel opens on the right.
-3. It lists your messages that are currently on screen. Slack only loads messages as you scroll, so to reach older ones, scroll up in the conversation and click **Rescan**.
-4. Tick the messages to delete (or the select-all box), optionally filter by text, then click **Delete selected** and confirm.
-5. Watch the count; any that couldn't be deleted are listed at the bottom.
+3. **Pick messages** tab: lists your messages that are currently on screen. Slack only loads messages as you scroll, so to reach older ones, scroll up in the conversation and click the rescan (↻) button. Tick the messages to delete (or the select-all box), optionally filter by text, then click **Delete** and confirm.
+4. **Clear everything** tab: deletes every message of yours in the conversation, starting at the newest and scrolling up to the top. Press **Stop** at any time.
+5. A progress bar shows how it's going; anything that couldn't be deleted is listed underneath.
 
 ### Tips
 
@@ -60,6 +60,7 @@ Tests cover the selection logic ([`extension/selection.js`](extension/selection.
 | `extension/manifest.json` | MV3 manifest; content scripts run on `app.slack.com` |
 | `extension/background.js` | Toolbar button → tells the tab to toggle the panel |
 | `extension/content.js` | The in-page panel and the delete orchestration |
-| `extension/slack-ui.js` | Reading Slack's DOM and driving its delete menu (all selectors here) |
+| `extension/slack-ui.js` | Reading Slack's DOM and deleting via `chat.delete` (all selectors here) |
 | `extension/selection.js` | Pure selection/filter state (no DOM) |
-| `extension/panel.css` | Panel styling |
+| `extension/panel.css` | Panel styling (light and dark themes) |
+| `extension/logo.svg` | Source for the logo; `icon16/48/128.png` are rendered from it |

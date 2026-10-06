@@ -158,3 +158,15 @@ test('deleteViaApi retries on ratelimited and surfaces Slack errors', async () =
   assert.deepStrictEqual(res, { ok: false, error: 'cant_delete_message' });
   assert.strictEqual(fetchImpl.calls.length, 2);
 });
+
+test('deleteViaApi treats "Failed to fetch" as done once the row disappears', async () => {
+  const { window } = buildSessionDom();
+  const UI = loadUI();
+  const node = window.document.querySelector('[data-qa="message_container"]');
+  const fetchImpl = async () => {
+    setTimeout(() => node.remove(), 50); // Slack removes the row after deleting
+    throw new TypeError('Failed to fetch');
+  };
+  const res = await UI.deleteViaApi(node, window.document, { fetchImpl });
+  assert.deepStrictEqual(res, { ok: true, note: 'confirmed by UI' });
+});

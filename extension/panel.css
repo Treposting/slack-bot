@@ -1,66 +1,189 @@
+/* Slack Cleaner panel. Everything is scoped under #slack-cleaner so it never
+   leaks into Slack's own UI. Colours are tokens; dark mode just swaps them. */
+#slack-cleaner {
+  --sc-bg: #ffffff;
+  --sc-surface: #f6f5fa;
+  --sc-line: #e7e4ef;
+  --sc-text: #1b1830;
+  --sc-muted: #6e6a80;
+  --sc-brand: #2b1b5a;
+  --sc-brand-2: #120e26;
+  --sc-accent: #1fae72;
+  --sc-accent-soft: #e3f8ee;
+  --sc-danger: #d63a5c;
+  --sc-danger-soft: #fdebef;
+  --sc-sel: #f0ecfb;
+  --sc-shadow: 0 24px 60px -12px rgba(18, 14, 38, .35), 0 2px 6px rgba(18, 14, 38, .08);
+}
+@media (prefers-color-scheme: dark) {
+  #slack-cleaner {
+    --sc-bg: #17151f;
+    --sc-surface: #201d2b;
+    --sc-line: #2f2b3d;
+    --sc-text: #ecebf3;
+    --sc-muted: #9b97ad;
+    --sc-accent: #3ddc97;
+    --sc-accent-soft: rgba(61, 220, 151, .12);
+    --sc-danger: #f0577a;
+    --sc-danger-soft: rgba(240, 87, 122, .12);
+    --sc-sel: rgba(140, 116, 230, .16);
+    --sc-shadow: 0 24px 60px -12px rgba(0, 0, 0, .7), 0 0 0 1px rgba(255, 255, 255, .04);
+    color-scheme: dark;
+  }
+}
+
 #slack-cleaner.sc-panel {
   position: fixed;
   top: 64px;
   right: 16px;
-  width: 360px;
-  max-height: 72vh;
+  width: 380px;
+  max-width: calc(100vw - 32px);
+  max-height: min(680px, calc(100vh - 88px));
   z-index: 2147483647;
   display: flex;
   flex-direction: column;
-  background: #fff;
-  color: #1d1c1d;
-  border: 1px solid #e3e1e6;
-  border-radius: 12px;
-  box-shadow: 0 16px 48px rgba(20, 10, 30, 0.28);
-  font: 13px/1.45 Lato, system-ui, -apple-system, Segoe UI, sans-serif;
+  background: var(--sc-bg);
+  color: var(--sc-text);
+  border: 1px solid var(--sc-line);
+  border-radius: 16px;
+  box-shadow: var(--sc-shadow);
+  font: 13px/1.45 Lato, system-ui, -apple-system, "Segoe UI", sans-serif;
   overflow: hidden;
+  animation: sc-in .18s ease-out;
 }
-@media (prefers-color-scheme: dark) {
-  #slack-cleaner.sc-panel { background: #1a1d21; color: #e8e8e8; border-color: #35373b; color-scheme: dark; }
-  #slack-cleaner .sc-head, #slack-cleaner .sc-controls, #slack-cleaner .sc-foot, #slack-cleaner .sc-auto { border-color: #35373b; }
-  #slack-cleaner .sc-filter, #slack-cleaner .sc-btn { background: #222529; color: #e8e8e8; border-color: #4a4d52; }
-  #slack-cleaner .sc-sub, #slack-cleaner .sc-empty, #slack-cleaner .sc-note, #slack-cleaner .sc-auto-note { color: #b9b9bd; }
-  #slack-cleaner .sc-list, #slack-cleaner .sc-row, #slack-cleaner .sc-text { color: #e8e8e8; }
-  #slack-cleaner .sc-row:hover { background: rgba(255, 255, 255, .08); }
-  #slack-cleaner .sc-row.sel { background: #26405c; }
-  #slack-cleaner .sc-time { color: #9a9aa0; }
-  #slack-cleaner .sc-danger { background: #e01e5a; border-color: #e01e5a; color: #fff; }
-}
+@keyframes sc-in { from { opacity: 0; transform: translateY(-6px) scale(.98); } }
+#slack-cleaner *, #slack-cleaner *::before, #slack-cleaner *::after { box-sizing: border-box; }
+#slack-cleaner [hidden] { display: none !important; }
+#slack-cleaner svg { width: 16px; height: 16px; flex: none; }
+
+/* Header */
 #slack-cleaner .sc-head {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 10px 12px; border-bottom: 1px solid #e3e1e6; background: #4a154b; color: #fff;
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 14px 14px 16px;
+  background: linear-gradient(135deg, var(--sc-brand), var(--sc-brand-2));
+  color: #fff;
 }
-#slack-cleaner .sc-head strong { font-weight: 700; }
-#slack-cleaner .sc-x { background: none; border: 0; color: #fff; font-size: 15px; cursor: pointer; opacity: .85; }
-#slack-cleaner .sc-x:hover { opacity: 1; }
-#slack-cleaner .sc-sub { padding: 8px 12px; color: #6b6a6e; font-size: 12px; }
-#slack-cleaner .sc-controls {
-  display: flex; align-items: center; gap: 8px; padding: 6px 12px 10px;
+#slack-cleaner .sc-logo svg { width: 34px; height: 34px; display: block; }
+#slack-cleaner .sc-title { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+#slack-cleaner .sc-title strong { font-size: 15px; font-weight: 800; letter-spacing: -.01em; }
+#slack-cleaner .sc-title span { font-size: 12px; opacity: .7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#slack-cleaner .sc-head .sc-icon { color: #fff; }
+#slack-cleaner .sc-head .sc-icon:hover { background: rgba(255, 255, 255, .14); }
+
+/* Stats */
+#slack-cleaner .sc-stats {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+  padding: 12px 14px 4px;
 }
-#slack-cleaner .sc-check { display: flex; align-items: center; gap: 6px; white-space: nowrap; cursor: pointer; }
-#slack-cleaner .sc-filter { flex: 1; min-width: 0; padding: 5px 8px; border: 1px solid #e3e1e6; border-radius: 7px; font: inherit; background: #fff; color: inherit; }
-#slack-cleaner .sc-btn { padding: 5px 10px; border: 1px solid #e3e1e6; border-radius: 7px; background: #fff; color: inherit; font: inherit; font-weight: 600; cursor: pointer; }
-#slack-cleaner .sc-btn:hover:not(:disabled) { filter: brightness(0.97); }
-#slack-cleaner .sc-btn:disabled { opacity: .5; cursor: not-allowed; }
-#slack-cleaner .sc-danger { background: #c4314b; color: #fff; border-color: #c4314b; }
-#slack-cleaner .sc-list { flex: 1; overflow-y: auto; padding: 0 8px; }
-#slack-cleaner .sc-empty { padding: 24px 12px; text-align: center; color: #6b6a6e; }
+#slack-cleaner .sc-stat {
+  display: flex; flex-direction: column; align-items: flex-start;
+  padding: 8px 10px; border-radius: 10px; background: var(--sc-surface);
+}
+#slack-cleaner .sc-stat b { font-size: 18px; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
+#slack-cleaner .sc-stat span { font-size: 11px; color: var(--sc-muted); }
+#slack-cleaner .sc-stat-accent { background: var(--sc-accent-soft); }
+#slack-cleaner .sc-stat-accent b { color: var(--sc-accent); }
+
+/* Tabs */
+#slack-cleaner .sc-tabs {
+  display: flex; gap: 4px; margin: 10px 14px 0; padding: 3px;
+  background: var(--sc-surface); border-radius: 10px;
+}
+#slack-cleaner .sc-tabs button {
+  flex: 1; padding: 6px 8px; border: 0; border-radius: 8px; background: none;
+  color: var(--sc-muted); font: inherit; font-weight: 700; cursor: pointer;
+}
+#slack-cleaner .sc-tabs button[aria-selected="true"] {
+  background: var(--sc-bg); color: var(--sc-text); box-shadow: 0 1px 3px rgba(18, 14, 38, .12);
+}
+#slack-cleaner.sc-busy .sc-tabs button { cursor: not-allowed; }
+
+/* Panes */
+#slack-cleaner .sc-pane { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+#slack-cleaner .sc-pane[data-pane="auto"] { padding: 12px 14px 14px; gap: 10px; flex: none; }
+#slack-cleaner .sc-controls { display: flex; align-items: center; gap: 8px; padding: 12px 14px 8px; }
+#slack-cleaner .sc-check { display: flex; align-items: center; padding: 0 4px; cursor: pointer; }
+#slack-cleaner input[type="checkbox"] { width: 15px; height: 15px; margin: 0; accent-color: var(--sc-accent); cursor: pointer; }
+#slack-cleaner .sc-search {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px;
+  padding: 0 10px; height: 32px; border: 1px solid var(--sc-line); border-radius: 9px;
+  background: var(--sc-bg); color: var(--sc-muted);
+}
+#slack-cleaner .sc-search:focus-within { border-color: var(--sc-accent); box-shadow: 0 0 0 3px var(--sc-accent-soft); }
+#slack-cleaner .sc-search input {
+  flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--sc-text); font: inherit; padding: 0;
+}
+
+/* Buttons */
+#slack-cleaner .sc-icon {
+  display: inline-grid; place-items: center; width: 32px; height: 32px; flex: none;
+  border: 0; border-radius: 8px; background: none; color: var(--sc-muted); cursor: pointer;
+}
+#slack-cleaner .sc-icon:hover:not(:disabled) { background: var(--sc-surface); color: var(--sc-text); }
+#slack-cleaner .sc-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: 36px; padding: 0 14px; border: 1px solid transparent; border-radius: 10px;
+  font: inherit; font-weight: 700; cursor: pointer; transition: filter .12s, transform .06s;
+}
+#slack-cleaner .sc-btn:hover:not(:disabled) { filter: brightness(1.08); }
+#slack-cleaner .sc-btn:active:not(:disabled) { transform: translateY(1px); }
+#slack-cleaner button:disabled { opacity: .45; cursor: not-allowed; }
+#slack-cleaner button:focus-visible { outline: 2px solid var(--sc-accent); outline-offset: 2px; }
+#slack-cleaner .sc-wide { width: 100%; }
+#slack-cleaner .sc-danger { background: var(--sc-danger); color: #fff; }
+#slack-cleaner .sc-primary { background: linear-gradient(135deg, var(--sc-brand), #4b2f97); color: #fff; height: 40px; }
+#slack-cleaner .sc-ghost { background: var(--sc-danger-soft); color: var(--sc-danger); border-color: transparent; }
+
+/* List */
+#slack-cleaner .sc-list { flex: 1; min-height: 120px; overflow-y: auto; padding: 0 8px; }
 #slack-cleaner .sc-row {
-  display: flex; gap: 8px; align-items: flex-start; padding: 7px 8px; border-radius: 8px; cursor: pointer;
+  display: flex; gap: 10px; align-items: flex-start;
+  padding: 9px 8px; border-radius: 10px; cursor: pointer;
 }
-#slack-cleaner .sc-row:hover { background: rgba(127,127,127,.1); }
-#slack-cleaner .sc-row.sel { background: #eef4fb; }
-#slack-cleaner .sc-row input { margin-top: 2px; }
-#slack-cleaner .sc-row-body { display: flex; flex-direction: column; min-width: 0; }
-#slack-cleaner .sc-time { font-size: 11px; color: #8a898d; }
-#slack-cleaner .sc-text { white-space: pre-wrap; word-break: break-word; }
-#slack-cleaner .sc-foot {
-  display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  padding: 10px 12px; border-top: 1px solid #e3e1e6;
+#slack-cleaner .sc-row + .sc-row { margin-top: 2px; }
+#slack-cleaner .sc-row:hover { background: var(--sc-surface); }
+#slack-cleaner .sc-row.sel { background: var(--sc-sel); }
+#slack-cleaner .sc-row input { margin-top: 2px; flex: none; }
+#slack-cleaner .sc-row-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+#slack-cleaner .sc-text {
+  white-space: pre-wrap; word-break: break-word;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
 }
-#slack-cleaner .sc-note { font-size: 12px; color: #6b6a6e; flex: 1; }
-#slack-cleaner .sc-prob { color: #c4314b; }
-#slack-cleaner .sc-auto { padding: 10px 12px; border-top: 1px solid #e3e1e6; }
-#slack-cleaner .sc-auto-btn { width: 100%; background: #4a154b; color: #fff; border-color: #4a154b; }
-#slack-cleaner .sc-stop { width: 100%; background: #c4314b; color: #fff; border-color: #c4314b; }
-#slack-cleaner .sc-auto-note { margin-top: 6px; font-size: 11px; color: #8a898d; }
+#slack-cleaner .sc-text i { color: var(--sc-muted); }
+#slack-cleaner .sc-time { font-size: 11px; color: var(--sc-muted); }
+#slack-cleaner .sc-empty {
+  display: flex; flex-direction: column; gap: 4px; align-items: center; text-align: center;
+  padding: 32px 20px; color: var(--sc-muted);
+}
+#slack-cleaner .sc-empty b { color: var(--sc-text); }
+#slack-cleaner .sc-foot { padding: 10px 14px 14px; border-top: 1px solid var(--sc-line); }
+#slack-cleaner .sc-foot .sc-btn { width: 100%; }
+
+/* Clear-all card */
+#slack-cleaner .sc-card {
+  padding: 12px 14px; border-radius: 12px; background: var(--sc-surface); color: var(--sc-muted);
+}
+#slack-cleaner .sc-card p { margin: 0; }
+#slack-cleaner .sc-card p + p { margin-top: 6px; }
+#slack-cleaner .sc-card b { color: var(--sc-text); }
+
+/* Status / progress */
+#slack-cleaner .sc-status { padding: 10px 14px 12px; border-top: 1px solid var(--sc-line); background: var(--sc-surface); }
+#slack-cleaner .sc-bar { height: 4px; border-radius: 4px; background: var(--sc-line); overflow: hidden; }
+#slack-cleaner .sc-bar i {
+  display: block; height: 100%; width: 0; border-radius: inherit;
+  background: var(--sc-accent); transition: width .3s ease;
+}
+#slack-cleaner .sc-bar i.sc-indet { width: 35%; animation: sc-slide 1.1s ease-in-out infinite; }
+@keyframes sc-slide { from { transform: translateX(-100%); } to { transform: translateX(290%); } }
+#slack-cleaner .sc-status-text { margin-top: 8px; font-size: 12px; color: var(--sc-muted); }
+#slack-cleaner .sc-status-text b { color: var(--sc-text); }
+#slack-cleaner .sc-ok .sc-status-text { color: var(--sc-accent); }
+#slack-cleaner .sc-warn .sc-bar i { background: var(--sc-danger); }
+#slack-cleaner .sc-warn .sc-status-text { color: var(--sc-danger); }
+#slack-cleaner .sc-probs { margin: 6px 0 0; padding-left: 16px; color: var(--sc-muted); }
+#slack-cleaner .sc-probs li { word-break: break-word; }
+
+@media (prefers-reduced-motion: reduce) {
+  #slack-cleaner.sc-panel, #slack-cleaner .sc-bar i.sc-indet { animation: none; }
+}

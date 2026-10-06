@@ -227,6 +227,12 @@
         });
         data = await res.json();
       } catch (e) {
+        // The request usually reaches Slack and the delete happens even when
+        // the browser can't read the reply ("Failed to fetch"). Confirm it the
+        // way a person would: the row disappears once Slack processes it.
+        if (await waitFor(() => !doc.contains(node), { timeout: 5000, interval: 150 })) {
+          return { ok: true, note: 'confirmed by UI' };
+        }
         return { ok: false, error: `network: ${(e && e.message) || e}` };
       }
       if (data && data.ok) return { ok: true };
